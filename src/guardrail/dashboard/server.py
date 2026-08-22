@@ -19,9 +19,11 @@ _DEMO_PIN_HASH = _pin_hash("000000")
 
 @app.get("/approve/{token_id}", response_class=HTMLResponse)
 def approve_stub(token_id: str) -> str:
-    """Redacted stub — zero transaction data pre-auth."""
+    """Redacted stub: zero transaction data pre-auth, and no name either. The
+    page is reachable by anyone holding the link; the elder's identity is part
+    of what the PIN protects."""
     return f"""<html><body>
-<h1>Possible unusual activity on Sarla's account</h1>
+<h1>Possible unusual activity on a watched account</h1>
 <form method="post" action="/approve/{token_id}">
 <label>Enter your PIN: <input type="password" name="pin"></label>
 <button type="submit">View details</button>

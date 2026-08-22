@@ -46,6 +46,6 @@ def run_verifier(agent: Agent, monitor_result: MonitorResult) -> VerifierResult:
         except Exception:
             logger.exception("run_verifier: structured_output attempt failed")
     # ponytail: fails open toward corroborated=True — same reasoning as Monitor.
-    return VerifierResult(
-        corroborated=True, confidence=0.0, corroborating_signals=[], scam_pattern="schema_validation_failed"
-    )
+    from guardrail.graph import fail_open_verdict
+
+    return fail_open_verdict()

@@ -8,9 +8,9 @@ class Settings(BaseSettings):
     # Amazon Nova Pro: first-party AWS model, no Anthropic use-case-details
     # approval step, confirmed working with zero setup. Also fits this
     # hackathon's spirit (AWS-run event, AWS's own judges) better than a
-    # third-party model. Claude Sonnet 4.5/5 both work on this account too (see
-    # git history) if you'd rather trade the AWS-native angle for stronger
-    # tool-use reasoning — swap back with one line, nothing else changes.
+    # third-party model. Claude Sonnet 4.5 also ran this pipeline correctly on
+    # this account (inference profile us.anthropic.claude-sonnet-4-5-20250929-v1:0,
+    # after the one-time Anthropic use-case form). Swap is this one line.
     bedrock_model_id: str = "amazon.nova-pro-v1:0"
     plaid_sandbox_client_id: str = ""
     plaid_sandbox_secret: str = ""

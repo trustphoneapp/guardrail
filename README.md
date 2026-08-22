@@ -1,17 +1,46 @@
 # Guardrail
 
-Elder financial fraud watch agent, built for the Agents for Humans AWS hackathon.
-Priya Nair's mother Sarla is watched by a silent 3-agent Strands pipeline; Priya
-only hears from it when a scam-shaped anomaly is independently corroborated twice.
+An agent that watches an elderly parent's bank account on behalf of her family,
+not her bank. Built for the Agents for Humans AWS hackathon on the Strands
+Agents SDK, deployed on Amazon Bedrock AgentCore Runtime.
 
-Full strategy, debate history, and the resolved architecture spec this scaffold
-implements live in the project's two published docs (build strategy, architecture spec).
+Sarla is 78. Her daughter Priya lives 2,000 miles away. Every morning three
+Strands agents check Sarla's transactions against her own normal. On most days
+they find nothing and say nothing. When something looks like a scam (a burst of
+gift cards after an "emergency" call, one large wire to a stranger, a
+remote-access purchase followed by an ATM run) the pipeline drafts a
+plain-language message and asks Priya before anyone acts. The model never does
+the math and can never send.
+
+## Judges: the five-minute path
+
+```bash
+git clone <repo> && cd guardrail
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+pytest                                    # 30 tests, routing + tokens + rules, no AWS needed
+```
+
+To run against a live model you need AWS credentials in `us-east-1` with
+`bedrock:InvokeModel` on `amazon.nova-pro-v1:0` (no model-access form for Nova).
+
+```bash
+AWS_PROFILE=<yours> python scripts/run_local.py --scenario quiet_day          # silence
+AWS_PROFILE=<yours> python scripts/run_local.py --scenario grandparent_scam   # escalation + token
+uvicorn guardrail.dashboard.server:app --app-dir src --port 8000             # /trend/<actor>, /approve/<token>
+```
+
+Demo PIN is `000000`. The deployed runtime is
+`arn:aws:bedrock-agentcore:us-east-1:156470788861:runtime/guardrail_agent-oO0Y9nFhQs`;
+EventBridge Scheduler `guardrail-daily-check` invokes it once a day.
 
 ## Pipeline
 
-`Monitor -> Verifier -> Escalation`, gated: Verifier only runs if Monitor flags,
-Escalation only runs if Verifier corroborates. Silence is the default outcome on
-almost every day. See [`src/guardrail/graph.py`](src/guardrail/graph.py).
+`Monitor -> Verifier -> Escalation`, gated. Verifier only runs if Monitor
+flags. Escalation only runs if Verifier corroborates. If Monitor or Verifier
+fails outright (model error, Bedrock down) the pipeline fails open toward a
+human: escalate, don't go quiet. `tests/test_pipeline_stubbed.py` drives every
+route with fake agents.
 
 ```mermaid
 flowchart TD
@@ -22,71 +51,100 @@ flowchart TD
         Verifier["Verifier agent\ncross_check_signals"]
         Escalation["Escalation agent\ndraft_alert\nrequest_human_approval"]
         Monitor -->|flagged| Verifier
+        Monitor -->|model failed: fail open| Escalation
         Verifier -->|corroborated| Escalation
         Monitor -.->|not flagged: quiet| Silent1["no output"]
         Verifier -.->|not corroborated: quiet_unverified| Silent2["no output"]
     end
 
-    Plaid[("Plaid Sandbox\n(read-only, via AgentCore Identity)")] --> Monitor
-    Escalation -->|issues signed token, Python only\nnever the LLM| Approval["approval/token.py"]
-    Approval --> Dashboard["Dashboard\n/approve/{token}"]
-    Dashboard -->|SMS/email link| Priya(["Priya\n(family contact)"])
-    Priya -->|PIN + approve/deny| Dashboard
+    Stream[("Plaid-shaped synthetic\ntransaction stream\n(sandbox, labeled)")] --> Monitor
+    Escalation -->|signed token, Python only,\nnever the LLM| Approval["approval/token.py"]
+    Approval --> Dashboard["Dashboard\n/approve/{token}\n/trend/{actor}"]
+    Dashboard -->|magic link| Priya(["Priya\n(family contact)"])
+    Priya -->|PIN, approve/deny| Dashboard
 ```
 
-Two things this diagram is being honest about: the model never touches
-`approval/token.py` directly (that's the actual security boundary, not
-decoration), and both "nothing happened" exits are first-class, not
-error paths -- silence is the intended outcome on almost every run.
+What each agent does, and what it is not allowed to do:
 
-## Setup
+- **Monitor** calls three tools in order. `score_deviation` is deterministic
+  Python: gift-card burst, outsized wire, remote-access purchase plus ATM
+  withdrawal. The model is instructed to report the tool's result exactly, and
+  `run_monitor` uses `structured_output_model` on a normal invocation because
+  the deprecated `agent.structured_output()` was observed skipping the tool
+  loop entirely and guessing.
+- **Verifier** calls `cross_check_signals`, a separate lookup that maps
+  Monitor's signal kinds to named scam patterns. Today it is a second
+  deterministic check, not an independent analysis; the section below on
+  what's next says what would make it one.
+- **Escalation** calls `draft_alert` and `request_human_approval`. It cannot
+  send anything. `run_escalation` mints the real token in Python after the
+  agent's loop, whatever the agent did, so an Alert always carries a
+  correctly-scoped token.
 
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-cp .env.example .env  # fill in AWS + Plaid sandbox creds when you have them
-pytest                # routing + token logic — needs zero AWS credentials
-python scripts/seed_sandbox.py
-python scripts/run_local.py --scenario grandparent_scam
+## Approval
+
+`request_human_approval` issues an HMAC-SHA256 signed, single-use token with a
+15-minute TTL, keyed by `token_id`. The link opens a redacted page (no amounts,
+no merchants). A memorized PIN unlocks the evidence trail. Five wrong PINs burn
+the token; a burned or redeemed token is never re-issued or extended.
+Redemption is locked, so two clicks on the same link yield exactly one
+success. See `tests/test_approval_tokens.py`.
+
+## Why not Strands Graph
+
+Graph is the right topology; the diagram above is the graph. It is not what
+runs because Graph's edges forward each node's free-text output, and this
+pipeline needs every handoff to be exact JSON (a live Nova Pro run emitted
+malformed tool arguments when a Python repr was embedded in a prompt) and
+every gate to be testable without a model call. So the edges are ~40 lines of
+Python with pydantic contracts and the nodes are unchanged Strands Agents.
+Full reasoning at the top of `src/guardrail/graph.py`.
+
+## What is real and what is sandboxed
+
+Real and verified live: the three Strands agents and their tools, the AgentCore
+container deployment, the daily schedule, the token flow, the trend view, fail
+open on model failure.
+
+Sandboxed or stubbed, and labeled as such in code: the transaction stream
+(`synthetic/`, Plaid-shaped, no real bank), the credential broker
+(`identity/broker.py` returns a placeholder; the AgentCore Identity exchange it
+stands in for is described in its docstring), notification
+(`approval/channel.py` prints the link instead of calling SNS), and storage
+(tokens, baselines, and trend rows are in-process dicts; a container restart
+clears them). One demo PIN, one elder. Each is a swap, not a rewrite, and none
+of them is hidden behind a feature flag.
+
+## Detection rules
+
+Four patterns today, all in `tools/baseline_tools.py::score_deviation`,
+each with a test in `tests/test_score_deviation.py`:
+
+| Pattern | Signature |
+|---|---|
+| Gift-card burst (grandparent, IRS impersonation) | 2+ gift-card merchants in one run |
+| Romance / advance-fee wire | one wire over 10x the baseline median |
+| Tech-support | MCC 7379 remote-access purchase plus an ATM withdrawal in the same run |
+
+## Layout
+
+```
+src/guardrail/
+  app.py                 AgentCore entrypoint (container, /invocations)
+  graph.py               routing: the gates, fail-open, run_pipeline
+  agents/                monitor, verifier, escalation (Strands Agents)
+  tools/                 @tool functions; all deterministic
+  approval/token.py      HMAC tokens, PIN attempts, single-use, locked
+  approval/channel.py    notify() stub
+  dashboard/server.py    FastAPI: /approve/{token}, /trend/{actor}
+  memory/manager.py      baselines + trend rows (in-process)
+  synthetic/             scenarios and the baseline generator
+  identity/broker.py     credential broker stub
+infra/iam/               the three roles as deployed
+scripts/                 run_local, seed_sandbox, setup_scheduler
+tests/                   30 tests, no AWS required
 ```
 
-## Day-1 spike — done, checked against strands-agents 1.52.0
+## License
 
-Verified by installing `strands-agents` and `bedrock-agentcore` into a real venv
-and introspecting the classes directly, not by reading docs:
-
-- `Agent(model=..., system_prompt=..., tools=[...])` and
-  `Agent.structured_output(Model, prompt=...)` — confirmed, exact match to this
-  scaffold's usage.
-- `BedrockModel(model_id=..., region_name=...)` — confirmed, both kwargs are real
-  (`model_id` lives in `BedrockModel.BedrockConfig`, `region_name` is a direct
-  constructor param).
-- `strands.multiagent.GraphBuilder` — `add_node`, `add_edge(condition=...)`,
-  `set_entry_point` all exist as assumed, **but** the intended condition pattern
-  (`state.results["monitor"].get_output()`) was wrong — that method doesn't exist.
-  The real path is `NodeResult.get_agent_results()[0].structured_output`.
-- Bigger finding: `Graph.__call__(task, ...)` propagates one shared task through
-  the whole run — it has no native way to hand a node a distinct, code-built
-  prompt derived from the previous node's typed output, which this pipeline
-  needs (Verifier must see Monitor's specific signals, not just the original
-  task). So `Graph` is **not used** for the deployed pipeline. See
-  [`graph.py`](src/guardrail/graph.py) for the full reasoning — `run_pipeline()`,
-  plain Python with explicit per-node prompts, is what's actually deployed.
-
-## What's deliberately not built here (see the architecture spec for why)
-
-Real bank OAuth, real SMS/email send (channel.py logs instead of calling SNS),
-multi-elder support, a native phone app, a trained anomaly model, persistent storage
-for tokens/baselines (in-memory only — fine for a single-process demo, not for
-production). Each cut is a one-line change to lift, not a rewrite.
-
-## Security notes for anyone extending this
-
-- `send_alert`-equivalent logic never runs inside the LLM's tool-call loop — token
-  issuance happens deterministically in Python (`approval/token.py`), called again
-  by `run_escalation()` regardless of whether the agent's own tool call succeeded,
-  so an Alert always carries a real, correctly-scoped token.
-- No tool anywhere has write/transfer capability. Read-only, everywhere.
-- `get_plaid_sandbox_token` raises `ActorMismatch` rather than silently resolving
-  a wrong actor — this is the one place a bug or prompt-injected `actor_id` swap
-  would actually matter.
+MIT.

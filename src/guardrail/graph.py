@@ -1,36 +1,50 @@
 """Guardrail's pipeline routing.
 
-The Day-1 spike is DONE — checked against strands-agents 1.52.0, installed and
-introspected directly, not guessed from docs. Two findings, one fixable, one that
-changed the design:
+Strands Graph was evaluated against strands-agents 1.52.0 (installed and read,
+not guessed from docs) and is the right topology for this pipeline: the mermaid
+diagram in the README *is* the graph. It is not what runs in production, and
+the reason is narrower than "Graph can't do it":
 
-1. GraphBuilder.add_node/add_edge/set_entry_point all match what an earlier draft
-   of this file assumed — except node output isn't read via a `.get_output()`
-   method (that doesn't exist); it's `NodeResult.get_agent_results()[0].structured_output`.
-2. The real problem: `Graph.__call__(task, ...)` takes ONE shared task for the
-   whole run. It doesn't give each node a distinct, code-constructed prompt built
-   from the previous node's typed output — but that's exactly what this pipeline
-   needs (Verifier must see Monitor's specific signals; Escalation must see
-   Verifier's specific scam_pattern). Strands' `Graph` object is built for
-   task/context propagation between agents, not for chaining typed,
-   deterministically-constructed inter-node calls.
+Graph does forward each node's output to its successors. In 1.52.0,
+`Graph._build_node_input` injects "Inputs from previous nodes: From monitor:
+..." into every downstream prompt. What it forwards is the node's free-text
+result. This pipeline needs two things Graph's edges don't give:
 
-So `Graph` is dropped for the deployed pipeline. `run_pipeline()` below — plain
-Python, explicit per-node prompts, each gated on the previous node's structured
-result — already delivers the "deterministic, auditable, explain why this fired"
-story the Graph primitive was chosen for, with less framework to fight. This is
-what app.py, run_local.py, and every test actually use.
+1. Each handoff must be exact JSON, not prose. A live Nova Pro run embedded a
+   Python repr in a prompt and emitted malformed tool arguments that Bedrock
+   rejected (see verifier.py for the fix). Typed pydantic contracts on every
+   edge closed that class of bug; free-text edges reopen it.
+2. Each gate must be unit-testable with no Bedrock call. `monitor_flagged`,
+   `monitor_failed`, `verifier_corroborated` are plain functions, and
+   tests/test_pipeline_stubbed.py drives the whole route with fake agents.
+
+So the edges are the ~40 lines of Python below, and the nodes are unchanged
+Strands Agents with @tool functions. If Graph grows typed edge payloads, the
+nodes drop back in as-is. This is what app.py, run_local.py, and every test use.
 """
 
 from guardrail.models import MonitorResult, VerifierResult
+
+FAIL_OPEN_REASON = "schema_validation_failed"
 
 
 def monitor_flagged(result: MonitorResult) -> bool:
     return result.flagged
 
 
+def monitor_failed(result: MonitorResult) -> bool:
+    """True when Monitor gave up (model/Bedrock failure), not when it found a signal."""
+    return result.reasons == [FAIL_OPEN_REASON]
+
+
 def verifier_corroborated(result: VerifierResult) -> bool:
     return result.corroborated
+
+
+def fail_open_verdict() -> VerifierResult:
+    return VerifierResult(
+        corroborated=True, confidence=0.0, corroborating_signals=[], scam_pattern=FAIL_OPEN_REASON
+    )
 
 
 def run_pipeline(monitor_agent, verifier_agent, escalation_agent, account_id, actor_id, scenario, alert_id) -> dict:
@@ -49,7 +63,17 @@ def run_pipeline(monitor_agent, verifier_agent, escalation_agent, account_id, ac
     if not monitor_flagged(monitor_result):
         return {"status": "quiet", "monitor": monitor_result.model_dump()}
 
-    verifier_result = run_verifier(verifier_agent, monitor_result)
+    if monitor_failed(monitor_result):
+        # Fail OPEN, for real this time. Before this guard, Monitor's fallback
+        # carried signals=[], cross_check_signals on an empty list returned
+        # corroborated=False, and a Bedrock outage produced silence -- the
+        # exact opposite of what the README promised. Reproduced with a
+        # Monitor that raises 3x. Skipping the Verifier here is also the
+        # right call on its own: there is nothing for it to corroborate, and
+        # spending a model call to get a known-wrong answer is pure cost.
+        verifier_result = fail_open_verdict()
+    else:
+        verifier_result = run_verifier(verifier_agent, monitor_result)
     if not verifier_corroborated(verifier_result):
         return {
             "status": "quiet_unverified",

@@ -51,6 +51,12 @@
       "Resource": ["arn:aws:bedrock:*::foundation-model/*", "arn:aws:bedrock:us-east-1:156470788861:*"]
     },
     {
+      "Sid": "GuardrailStateTable",
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query"],
+      "Resource": "arn:aws:dynamodb:us-east-1:156470788861:table/guardrail-state"
+    },
+    {
       "Sid": "GetAgentAccessToken",
       "Effect": "Allow",
       "Action": ["bedrock-agentcore:GetWorkloadAccessToken", "bedrock-agentcore:GetWorkloadAccessTokenForJWT"],

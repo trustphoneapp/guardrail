@@ -1,0 +1,11 @@
+# Dashboard as a Lambda container behind a Function URL. Separate image from
+# the AgentCore one: this needs the Lambda runtime interface, not port 8080.
+FROM public.ecr.aws/lambda/python:3.11
+
+WORKDIR /build
+COPY pyproject.toml .
+COPY src ./src
+RUN pip install --no-cache-dir . mangum
+
+WORKDIR ${LAMBDA_TASK_ROOT}
+CMD ["guardrail.dashboard.lambda_handler.handler"]

@@ -55,7 +55,19 @@ def invoke(payload: dict, context) -> dict:
     scenario = payload.get("scenario", "quiet_day")  # demo-only knob
     alert_id = f"alert-{actor_id}-{scenario}"
 
-    return run_pipeline(monitor, verifier, escalation, account_id, actor_id, scenario, alert_id)
+    out = run_pipeline(monitor, verifier, escalation, account_id, actor_id, scenario, alert_id)
+    if payload.get("debug"):
+        # Which storage/notify config the container actually sees. Exists
+        # because an AgentCore env-var update once showed in the runtime config
+        # but not in the running container, and there was no way to tell from
+        # outside. Only returned when the caller asks.
+        import os
+
+        out["debug"] = {
+            "guardrail_table": os.environ.get("GUARDRAIL_TABLE"),
+            "dashboard_url": os.environ.get("GUARDRAIL_DASHBOARD_URL"),
+        }
+    return out
 
 
 if __name__ == "__main__":

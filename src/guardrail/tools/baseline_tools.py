@@ -39,6 +39,11 @@ def score_deviation(transactions: list[dict], baseline: dict) -> dict:
     reasons: list[str] = []
     signals: list[dict] = []
 
+    # "This was Mom": merchants the family dismissed are her normal now.
+    allowlist = {m.lower() for m in baseline.get("allowlist", [])}
+    if allowlist:
+        transactions = [t for t in transactions if t["merchant_name"].lower() not in allowlist]
+
     gift_card_hits = [t for t in transactions if _is_gift_card(t)]
     big_single_gift_card = [t for t in gift_card_hits if float(t["amount"]) >= SINGLE_GIFT_CARD_FLOOR]
     if len(gift_card_hits) >= 2:

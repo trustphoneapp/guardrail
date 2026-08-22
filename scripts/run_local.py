@@ -19,10 +19,15 @@ def main() -> None:
     parser.add_argument("--account-id", default="acct-1")
     args = parser.parse_args()
 
+    from guardrail.audit import AuditTrail
+    from guardrail.steering import EscalationGuard
+
     seed_baseline(args.actor_id)
-    monitor = build_monitor_agent()
-    verifier = build_verifier_agent()
-    escalation = build_escalation_agent()
+    alert_id = f"alert-{args.actor_id}-{args.scenario}"
+    audit = AuditTrail()
+    monitor = build_monitor_agent(hooks=[audit])
+    verifier = build_verifier_agent(hooks=[audit])
+    escalation = build_escalation_agent(hooks=[audit], guard=EscalationGuard(alert_id, args.actor_id))
 
     result = run_pipeline(
         monitor,
@@ -31,7 +36,8 @@ def main() -> None:
         account_id=args.account_id,
         actor_id=args.actor_id,
         scenario=args.scenario,
-        alert_id=f"alert-{args.actor_id}-{args.scenario}",
+        alert_id=alert_id,
+        audit=audit,
     )
     print(result)
 

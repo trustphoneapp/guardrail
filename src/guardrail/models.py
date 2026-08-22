@@ -21,6 +21,10 @@ class BaselineProfile(BaseModel):
     cadence_hist: dict[str, float]
     seasonal_drift: dict[str, float]
     updated_at: datetime
+    # Merchants the family has explicitly said are fine ("This was Mom").
+    # score_deviation skips them, so a dismissal changes the next run: the
+    # human decision closes the loop instead of vanishing into a log.
+    allowlist: list[str] = []
 
 
 class Signal(BaseModel):
@@ -44,6 +48,11 @@ class VerifierResult(BaseModel):
     confidence: float
     corroborating_signals: list[Signal]
     scam_pattern: str | None = None
+    # Features the Verifier found that Monitor's rules never examined
+    # (round_amounts, tight_window, unfamiliar_category). Corroboration
+    # requires at least one; this is what makes the second check independent
+    # rather than a restatement.
+    independent_features: list[str] = []
 
 
 class ApprovalToken(BaseModel):
@@ -63,6 +72,9 @@ class TrendPoint(BaseModel):
     scenario: str
     flagged: bool
     deviation_score: float
+    # Every tool call the agents made during this run, recorded by hooks
+    # (audit.py): agent, tool, duration_ms, ok, one-line summary.
+    audit: list[dict] = []
 
 
 class Alert(BaseModel):

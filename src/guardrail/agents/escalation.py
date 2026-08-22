@@ -17,8 +17,14 @@ ESCALATION_PROMPT = (
 )
 
 
-def build_escalation_agent() -> Agent:
+def build_escalation_agent(hooks=None, guard=None) -> Agent:
     return Agent(
+        name="escalation",
+        hooks=hooks,
+        # The steering guard (guardrail.steering.EscalationGuard) pins
+        # request_human_approval's alert_id/actor_id to the pipeline's own
+        # values. Supervision, not prompting.
+        plugins=[guard] if guard else None,
         model=BedrockModel(model_id=settings.bedrock_model_id, region_name=settings.aws_region),
         system_prompt=ESCALATION_PROMPT,
         tools=[draft_alert, request_human_approval],

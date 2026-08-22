@@ -47,21 +47,34 @@ def fail_open_verdict() -> VerifierResult:
     )
 
 
-def run_pipeline(monitor_agent, verifier_agent, escalation_agent, account_id, actor_id, scenario, alert_id) -> dict:
+def run_pipeline(
+    monitor_agent, verifier_agent, escalation_agent, account_id, actor_id, scenario, alert_id, audit=None
+) -> dict:
     """Runs Monitor -> Verifier -> Escalation with the same gating rules as the
-    Graph above, in plain Python. This is the actual source of truth."""
+    Graph above, in plain Python. This is the actual source of truth.
+
+    `audit` is the AuditTrail hook provider the caller attached to the agents;
+    its collected tool-call events land on the run's trend row, whatever the
+    outcome. Recording happens once, at the end, so escalation's tool calls
+    are included too.
+    """
     from guardrail.agents.escalation import run_escalation
     from guardrail.agents.monitor import run_monitor
     from guardrail.agents.verifier import run_verifier
     from guardrail.memory.manager import record_trend_point
     from guardrail.synthetic.stream import get_transactions
 
+    def _finish(result: dict) -> dict:
+        # Recorded regardless of outcome -- the trend view's entire point is
+        # showing the quiet days too, not just the alerts.
+        record_trend_point(actor_id, monitor_result, scenario, audit=audit.events if audit else None)
+        return result
+
     monitor_result = run_monitor(monitor_agent, account_id, actor_id, scenario)
-    # Recorded regardless of outcome -- the trend view's entire point is showing
-    # the quiet days too, not just the alerts.
-    record_trend_point(actor_id, monitor_result, scenario)
     if not monitor_flagged(monitor_result):
-        return {"status": "quiet", "monitor": monitor_result.model_dump()}
+        return _finish({"status": "quiet", "monitor": monitor_result.model_dump()})
+
+    transactions = get_transactions(scenario)
 
     if monitor_failed(monitor_result):
         # Fail OPEN, for real this time. Before this guard, Monitor's fallback
@@ -73,18 +86,22 @@ def run_pipeline(monitor_agent, verifier_agent, escalation_agent, account_id, ac
         # spending a model call to get a known-wrong answer is pure cost.
         verifier_result = fail_open_verdict()
     else:
-        verifier_result = run_verifier(verifier_agent, monitor_result)
+        verifier_result = run_verifier(verifier_agent, monitor_result, transactions, actor_id)
     if not verifier_corroborated(verifier_result):
-        return {
-            "status": "quiet_unverified",
+        return _finish(
+            {
+                "status": "quiet_unverified",
+                "monitor": monitor_result.model_dump(),
+                "verifier": verifier_result.model_dump(),
+            }
+        )
+
+    alert = run_escalation(escalation_agent, verifier_result, actor_id, alert_id, transactions)
+    return _finish(
+        {
+            "status": "escalated",
             "monitor": monitor_result.model_dump(),
             "verifier": verifier_result.model_dump(),
+            "alert": alert.model_dump(),
         }
-
-    alert = run_escalation(escalation_agent, verifier_result, actor_id, alert_id, get_transactions(scenario))
-    return {
-        "status": "escalated",
-        "monitor": monitor_result.model_dump(),
-        "verifier": verifier_result.model_dump(),
-        "alert": alert.model_dump(),
-    }
+    )

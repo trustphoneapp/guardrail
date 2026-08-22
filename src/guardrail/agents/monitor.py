@@ -20,8 +20,10 @@ MONITOR_PROMPT = (
 )
 
 
-def build_monitor_agent() -> Agent:
+def build_monitor_agent(hooks=None) -> Agent:
     return Agent(
+        name="monitor",
+        hooks=hooks,
         model=BedrockModel(model_id=settings.bedrock_model_id, region_name=settings.aws_region),
         system_prompt=MONITOR_PROMPT,
         tools=[fetch_recent_transactions, get_behavioral_baseline, score_deviation],

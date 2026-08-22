@@ -46,16 +46,19 @@ def invoke(payload: dict, context) -> dict:
     # module docstring) — this is EventBridge's fixed target input, not a
     # caller-supplied value from an open endpoint.
     actor_id = payload.get("actor_id") or settings.demo_actor_id
-
-    monitor = build_monitor_agent()
-    verifier = build_verifier_agent()
-    escalation = build_escalation_agent()
-
     account_id = payload.get("account_id", "acct-1")
     scenario = payload.get("scenario", "quiet_day")  # demo-only knob
     alert_id = f"alert-{actor_id}-{scenario}"
 
-    out = run_pipeline(monitor, verifier, escalation, account_id, actor_id, scenario, alert_id)
+    from guardrail.audit import AuditTrail
+    from guardrail.steering import EscalationGuard
+
+    audit = AuditTrail()
+    monitor = build_monitor_agent(hooks=[audit])
+    verifier = build_verifier_agent(hooks=[audit])
+    escalation = build_escalation_agent(hooks=[audit], guard=EscalationGuard(alert_id, actor_id))
+
+    out = run_pipeline(monitor, verifier, escalation, account_id, actor_id, scenario, alert_id, audit=audit)
     if payload.get("debug"):
         # Which storage/notify config the container actually sees. Exists
         # because an AgentCore env-var update once showed in the runtime config

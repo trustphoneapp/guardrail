@@ -27,7 +27,19 @@ def get_baseline(actor_id: str) -> BaselineProfile:
     return BaselineProfile(**raw)
 
 
-def record_trend_point(actor_id: str, monitor_result: MonitorResult, scenario: str) -> TrendPoint:
+def add_to_allowlist(actor_id: str, merchants: list[str]) -> BaselineProfile:
+    """The family's dismiss decision, applied to the elder's baseline so the
+    next run treats these merchants as her normal."""
+    profile = get_baseline(actor_id)
+    known = {m.lower() for m in profile.allowlist}
+    profile.allowlist.extend(m for m in merchants if m.lower() not in known)
+    store.put(_BASELINE, actor_id, profile.model_dump(mode="json"))
+    return profile
+
+
+def record_trend_point(
+    actor_id: str, monitor_result: MonitorResult, scenario: str, audit: list[dict] | None = None
+) -> TrendPoint:
     """Every Monitor run gets recorded, flagged or not. The trend view's whole
     point is showing the quiet days too, not just the alerts."""
     point = TrendPoint(
@@ -36,6 +48,7 @@ def record_trend_point(actor_id: str, monitor_result: MonitorResult, scenario: s
         scenario=scenario,
         flagged=monitor_result.flagged,
         deviation_score=monitor_result.deviation_score,
+        audit=audit or [],
     )
     store.append(f"{_TREND}#{actor_id}", point.model_dump(mode="json"))
     return point

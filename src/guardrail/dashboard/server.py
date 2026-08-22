@@ -74,11 +74,16 @@ def decide(alert_id: str, decision: str = Form(...)) -> str:
         raise HTTPException(status_code=404, detail="unknown alert")
     if decision not in ("approve", "dismiss"):
         raise HTTPException(status_code=400, detail="decision must be approve or dismiss")
-    from guardrail.memory.manager import save_alert
+    from guardrail.memory.manager import add_to_allowlist, save_alert
 
     alert.status = "approved" if decision == "approve" else "denied"
     save_alert(alert)
-    return f"<html><body><h1>Recorded: {alert.status}</h1><p>Alert {alert_id}.</p></body></html>"
+    note = ""
+    if decision == "dismiss":
+        merchants = sorted({t.merchant_name for t in alert.evidence_trail})
+        add_to_allowlist(alert.actor_id, merchants)
+        note = f"<p>Added to the baseline as normal for this account: {', '.join(merchants)}. The next run will treat them as hers.</p>"
+    return f"<html><body><h1>Recorded: {alert.status}</h1><p>Alert {alert_id}.</p>{note}</body></html>"
 
 
 @app.get("/trend/{actor_id}", response_class=HTMLResponse)
@@ -90,16 +95,27 @@ def trend(actor_id: str) -> str:
     points = get_trend(actor_id)
     if not points:
         return "<html><body><h1>No runs yet</h1><p>Nothing recorded for this account.</p></body></html>"
+    def _audit_cell(p) -> str:
+        if not p.audit:
+            return ""
+        lines = "".join(
+            f"<li>{e.get('agent')}: <code>{e.get('tool')}</code> "
+            f"({e.get('duration_ms')}ms, {'ok' if e.get('ok') else 'FAILED'})</li>"
+            for e in p.audit
+        )
+        return f"<details><summary>{len(p.audit)} tool calls</summary><ul>{lines}</ul></details>"
+
     rows = "\n".join(
         f"<tr><td>{p.ts.isoformat(timespec='minutes')}</td><td>{p.scenario}</td>"
-        f"<td>{'flagged' if p.flagged else 'quiet'}</td><td>{p.deviation_score:.2f}</td></tr>"
+        f"<td>{'flagged' if p.flagged else 'quiet'}</td><td>{p.deviation_score:.2f}</td>"
+        f"<td>{_audit_cell(p)}</td></tr>"
         for p in reversed(points)
     )
     return f"""<html><body>
 <h1>Guardrail — {actor_id}</h1>
 <p>{len(points)} check{"s" if len(points) != 1 else ""} recorded. Silence on most days is the system working, not the system being idle.</p>
 <table border="1" cellpadding="6">
-<tr><th>Time</th><th>Scenario</th><th>Result</th><th>Deviation score</th></tr>
+<tr><th>Time</th><th>Scenario</th><th>Result</th><th>Deviation score</th><th>Why (audit trail)</th></tr>
 {rows}
 </table>
 </body></html>"""

@@ -39,7 +39,7 @@ def run_escalation(
     # tool-call loop above didn't complete cleanly. Token issuance is never left to
     # the model's word for it; this line is the actual security boundary.
     token = issue_token(alert_id=alert_id, actor_id=actor_id)
-    return Alert(
+    alert = Alert(
         alert_id=alert_id,
         actor_id=actor_id,
         verdict=verifier_result,
@@ -47,3 +47,10 @@ def run_escalation(
         approval_token=token,
         status="pending_approval",
     )
+    # Persisted so the dashboard, a separate process, can show the real
+    # evidence trail after the PIN. Before this, the post-PIN page was a
+    # placeholder and the link from the live runtime returned 403.
+    from guardrail.memory.manager import save_alert
+
+    save_alert(alert)
+    return alert

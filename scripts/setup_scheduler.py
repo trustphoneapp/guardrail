@@ -2,6 +2,19 @@
 schedule that invokes the deployed Guardrail agent. Run once after the
 AgentCore Runtime exists; re-running is safe (create calls fail loudly if the
 role/schedule already exist rather than silently duplicating).
+
+DEPRECATED TARGET SHAPE BELOW -- kept for the record, do not recreate it.
+The universal target arn:aws:scheduler:::aws-sdk:bedrockagentcore:invokeAgentRuntime
+fired, errored, and was dropped without retry on every attempt (CloudWatch
+AWS/Scheduler metrics: InvocationAttemptCount = TargetErrorCount =
+InvocationDroppedCount, one per fire). InvokeAgentRuntime has a streaming
+response, which universal targets can't consume, and a static Input can't
+mint a fresh session ID per fire. The deployed schedule instead targets the
+guardrail-scheduler-runner Lambda (src/guardrail/scheduler_runner.py, same
+container image as the dashboard with a CMD override), which calls
+InvokeAgentRuntime via boto3 with a uuid session per run. Verified live:
+schedule fired unattended at 2026-08-22T22:04Z and the quiet-day row landed
+in DynamoDB with no human involved.
 """
 
 import base64

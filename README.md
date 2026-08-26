@@ -18,8 +18,14 @@ the math and can never send.
 git clone <repo> && cd guardrail
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                    # 30 tests, routing + tokens + rules, no AWS needed
+python scripts/sweep.py    # every scenario through the real detection core: ~1s, zero credentials
+pytest                     # 47 tests: routing, tokens, rules, fail-open — no AWS needed
 ```
+
+The sweep prints the verdict table for all six scenarios (quiet days stay
+quiet, four scam shapes escalate) using the exact detection code the deployed
+agents call as tools. What the AI is never allowed to do, and where each rule
+is enforced, is one short read: [CONSTITUTION.md](CONSTITUTION.md).
 
 To run against a live model you need AWS credentials in `us-east-1` with
 `bedrock:InvokeModel` on `amazon.nova-pro-v1:0` (no model-access form for Nova).

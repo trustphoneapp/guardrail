@@ -25,7 +25,7 @@ def approve_stub(token_id: str) -> str:
     return f"""<html><body>
 <h1>Possible unusual activity on a watched account</h1>
 <form method="post" action="/approve/{token_id}">
-<label>Enter your PIN: <input type="password" name="pin"></label>
+<label>Enter your PIN: <input type="password" name="pin" autofocus></label>
 <button type="submit">View details</button>
 </form>
 </body></html>"""

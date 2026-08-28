@@ -1,74 +1,138 @@
-# Demo video script (target 4:20, cap 5:00)
+# Demo video script — from the 0:32 intro handoff (target 4:10, cap 5:00)
 
-Record all footage against the live deployed stack. Everything in this script
-ran live on Aug 22; nothing is a mockup. Corner badge "Strands | AgentCore |
-Nova Pro" stays on the whole video. Narrate under 140 words per minute.
+Segment 1 (0:00–0:32) is the finished HeyGen storybook intro and is locked.
+It ends on: "This is Guardrail... Here's the real thing." Everything below is
+the screencast that starts on that cut.
 
-## 0:00-0:15 — Hook (verbatim, over a title card)
+Ground rules for recording: everything runs against the live deployed stack,
+nothing mocked. Terminal at 18pt+ font, dark theme, browser at 125% zoom.
+Corner badge "Strands | AgentCore | Nova Pro" on screen from 0:32 to the end.
+Narrate under 140 words per minute — slower than feels natural.
 
-"Last year Americans over sixty reported four point eight billion dollars
-stolen by scammers, and most families found out after the money was gone.
-This is Guardrail: three Strands agents on Amazon Bedrock AgentCore that
-check an elderly parent's account every morning, stay silent when nothing is
-wrong, and when something looks like a scam, ask her daughter before anyone
-acts. Here it is running live."
+Pre-flight (do all of this BEFORE recording anything):
+- [ ] Verify the FBI IC3 elder-fraud dollar figure against the 2024 report PDF; the
+      narration below says "almost five billion dollars" — correct it if wrong.
+- [ ] `curl <dashboard>/health` returns ok; runtime READY; open tabs: trend page,
+      GitHub repo (Actions tab showing green), README.
+- [ ] One fresh terminal, `cd ~/Projects/guardrail`, profile env ready.
+- [ ] Do one throwaway invoke first so the runtime is warm (avoids a 15s cold
+      stall on camera).
 
-[Verify the $4.8B figure against the FBI IC3 2024 elder fraud report PDF
-before recording. If it differs, use the real number.]
+---
 
-## 0:15-0:40 — The people and the problem
+## 0:32–1:10 — The scam, caught live (the aha, immediately)
 
-Sarla, 78. Priya, 2,000 miles away. Banks flag fraud for the bank's losses;
-nobody watches for the family. One slide, three scam shapes: gift-card burst
-after an "emergency" call, one large wire to a stranger, remote-access
-purchase then an ATM run.
+SCREEN: terminal. Run:
 
-## 0:40-1:05 — Architecture (one diagram, one sentence of trust)
+    AWS_PROFILE=guardrail python scripts/run_local.py --scenario grandparent_scam
 
-The README mermaid diagram: Scheduler, AgentCore Runtime, Monitor, Verifier,
-Escalation, DynamoDB, dashboard. Sandbox components visibly labeled.
-Say: "The model never does the math, and it can never send. Watch the
-Verifier: it corroborates from features the Monitor never saw."
+While it runs, NARRATE:
 
-## 1:05-1:35 — Quiet day, live
+> "Scammers took almost five billion dollars from older Americans last year,
+> and most families found out after the money was gone. So here is that story
+> again — for real. Three five-hundred-dollar gift cards, bought in one
+> afternoon, on a live AWS deployment."
 
-Invoke the deployed runtime with scenario quiet_day (real ~8s run;
-jump-cut with an on-screen "trimmed, real run"). Show the response: status
-quiet. Open the public trend page: the quiet row, its audit trail expanded,
-four tool calls. Say: "Silence is the product. Most days this is the whole
-story."
+When the escalated result prints, point at it (cursor highlight) and read:
 
-## 1:35-2:30 — Grandparent scam, live
+> "The Monitor flagged it: three gift-card purchases in one window. The
+> Verifier double-checked with evidence the Monitor never looked at — round
+> amounts, a tight time window — and agreed. And the Escalation agent drafted
+> a message and minted a signed approval link. Nobody's been called yet.
+> Nothing's been touched."
 
-Invoke with grandparent_scam. Show the response fields as callouts:
-Monitor's deterministic reason ("3 gift-card purchases in one window"),
-Verifier's independent_features (round_amounts), the scam_pattern name.
-Show the trend page audit trail: monitor's three tools, verifier's
-cross-check, escalation's draft + request. Say: "If either agent crashes,
-the pipeline fails open toward Priya, and there's a test that proves it."
+## 1:10–1:45 — Priya's phone
 
-## 2:30-3:15 — Priya's side, on the public URL
+SCREEN: browser, the printed approval link on the public dashboard.
 
-The redacted page (no name, no amounts). PIN. The evidence trail: three $500
-gift cards, the pattern, the confidence. Paste the link again: "token
-already used." Say: "Signed, single-use, fifteen minutes, five wrong PINs
-burns it. This page is the only action Guardrail takes: nothing is frozen,
-nothing is moved."
+1. Open the link — the redacted stub page. NARRATE:
+> "Priya gets this link. Before her PIN, it shows nothing — no amounts, no
+> merchants, in case the link leaks."
+2. Type a WRONG pin first. Show the "4 attempts remaining" error:
+> "Wrong PIN counts down. Five misses burn the link forever."
+3. Right PIN → evidence trail renders:
+> "The right PIN shows her exactly why: which purchases, which pattern, how
+> confident. And these two buttons are the only actions that exist —
+> Guardrail can never freeze a card or move a dollar. It can only tap a
+> human on the shoulder."
+4. Paste the same link again → "token already used":
+> "Used once, dead forever."
 
-## 3:15-3:40 — Close the loop, live
+## 1:45–2:15 — The boring page that means everything is fine
 
-Click "This was Mom, dismiss." Show the merchants entering the baseline.
-Re-invoke the same scenario: quiet. Say: "The family's answer isn't a log
-line. It's what the system knows tomorrow."
+SCREEN: the public trend page for sarla-demo-001.
 
-## 3:40-4:05 — Honest slide
+> "This is my favorite screen, and it's the most boring one. Every row is a
+> morning Guardrail checked her account. See these quiet-day rows? No human
+> triggered them — an EventBridge schedule has been waking this agent every
+> day for a week while we did nothing. Silence here isn't the system idle.
+> Silence is the product."
 
-Two columns. Real and verified: the three agents, AgentCore deployment,
-daily schedule, tokens, audit trail, fail-open. Sandboxed: Plaid-shaped
-synthetic stream, one demo PIN, link shown instead of SMS. Say: "Each of
-these is a swap, not a rewrite, and none is hidden."
+Expand one row's audit trail:
 
-## 4:05-4:20 — End card
+> "And every run keeps its receipts: which agent called which tool, in what
+> order, how long it took."
 
-Repo URL, live dashboard URL, builder.aws post title. "Built solo on
-Strands and AgentCore for Agents for Humans."
+## 2:15–2:40 — The family teaches it
+
+SCREEN: back on the evidence page. Click "This was Mom, dismiss." Then re-run
+the same scenario in the terminal; it comes back quiet.
+
+> "One more thing. When Priya says 'that was actually Mom' — Guardrail
+> learns. Same purchases, next morning: quiet. The family's judgment becomes
+> the baseline."
+
+## 2:40–3:10 — Why you can trust it (constitution + architecture)
+
+SCREEN: CONSTITUTION.md on GitHub, scroll slowly. Then the README diagram.
+
+> "The architecture is three Strands agents on Amazon Bedrock AgentCore, and
+> one short file governs them: the constitution. The model never does the
+> math — every flag is a deterministic rule you can unit-test. The model
+> never sends — token minting is plain Python it can't reach. A steering
+> guard means it can't even route an alert to the wrong family. And if an
+> agent crashes outright, the pipeline fails open — it wakes a human rather
+> than going quiet. Every rule names the code and the test that enforce it."
+
+## 3:10–3:40 — Prove it yourself in one command
+
+SCREEN: terminal. Run:
+
+    python scripts/sweep.py
+
+> "You don't have to trust the video. One command runs every scenario
+> through the real detection core — no credentials, no model, one second.
+> Quiet days stay quiet, four scam shapes wake a human. Forty-seven tests
+> and a full-history secret scan run green in CI on every push."
+
+Cut briefly to the GitHub Actions green checks.
+
+## 3:40–4:00 — Honest limits
+
+SCREEN: one plain slide, three lines:
+  - Transaction stream: Plaid-shaped synthetic data, labeled as such
+  - Alerts: link shown on screen instead of a real SMS
+  - One demo PIN instead of per-family enrollment
+
+> "What's not real yet, on purpose: the bank feed is sandboxed synthetic
+> data, the text message is a link on screen, and there's one demo PIN. Each
+> one is a documented swap — production Plaid, SNS, per-family enrollment —
+> not a rewrite."
+
+## 4:00–4:10 — End card
+
+SCREEN: title card — Guardrail. Repo URL, live dashboard URL, "Agents for
+Humans" hackathon, Everyday Agents track.
+
+> "Guardrail. It watches quietly, so someone you love doesn't lose
+> everything loudly."
+
+---
+
+## Assembly notes
+
+- Export the HeyGen intro at 1080p, stitch in iMovie/CapCut: intro (0:32) +
+  screencast. Hard cut on "Here's the real thing," no transition effect.
+- Total runtime lands ~4:10 against the 5:00 cap — do not fill the slack.
+- Upload to YouTube (public or unlisted-with-link per Devpost rules).
+- After upload: click every link in the description from an incognito window.

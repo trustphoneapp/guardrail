@@ -32,20 +32,22 @@ jobs:
 
   security:
     runs-on: ubuntu-latest
-    # gitleaks-action lists the PR's commits via the API, which needs
-    # pull-requests:read. The default GITHUB_TOKEN here is contents-read-only,
-    # so grant the scopes explicitly (contents:read is still needed for checkout).
     permissions:
       contents: read
-      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
           # gitleaks scans history; fetch it all so secrets in older commits
           # are caught, not just the tip.
           fetch-depth: 0
-      - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+      # The CLI directly, not gitleaks-action: the action derives its scan
+      # range from the push event payload, and on the very first push to a
+      # repo that range is "<root-commit>^..HEAD" -- the root commit has no
+      # parent, so git dies on an unknown revision and the job fails with a
+      # partial scan. Scanning the full history explicitly has no event-range
+      # dependency and is what we verify locally before pushing anyway.
+      - name: Secret scan (gitleaks, full history)
+        run: |
+          curl -sSfL -o gitleaks.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz
+          tar -xzf gitleaks.tgz gitleaks
+          ./gitleaks git --no-banner .
